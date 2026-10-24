@@ -72,6 +72,8 @@ async function main() {
       models: []
     };
 
+    const poolRemaining = {};
+
     // Extract weekly & 5h summary pools
     const groups = quotaSummary?.response?.groups || quotaSummary?.groups;
     if (Array.isArray(groups)) {
@@ -87,7 +89,9 @@ async function main() {
           const isWeekly = bucket.window === 'weekly' || (bucket.displayName && bucket.displayName.toLowerCase().includes('weekly'));
           const windowLabel = isWeekly ? 'Weekly' : '5h';
           let label = '';
-          if (groupName.toLowerCase().includes('gemini')) {
+          if (groupName.toLowerCase().includes('argon')) {
+            label = `Argon ${windowLabel}`;
+          } else if (groupName.toLowerCase().includes('gemini')) {
             label = `Gemini ${windowLabel}`;
           } else if (groupName.toLowerCase().includes('claude') || groupName.toLowerCase().includes('gpt')) {
             label = `Claude/GPT ${windowLabel}`;
@@ -95,11 +99,16 @@ async function main() {
             label = `${groupName} ${windowLabel}`;
           }
 
+          const remFraction = typeof bucket.remainingFraction === 'number' ? bucket.remainingFraction : undefined;
+          if (bucket.bucketId === '3p-5h') poolRemaining['3p'] = remFraction;
+          if (bucket.bucketId === 'gemini-5h') poolRemaining['gemini'] = remFraction;
+          if (bucket.bucketId === 'gemini-argon-wtu-weekly') poolRemaining['argon'] = remFraction;
+
           result.models.push({
             label,
             modelId: bucket.bucketId || label,
-            remainingPercentage: typeof bucket.remainingFraction === "number" ? bucket.remainingFraction : undefined,
-            isExhausted: bucket.remainingFraction === 0,
+            remainingPercentage: remFraction,
+            isExhausted: remFraction === 0,
             resetTime,
             timeUntilResetMs
           });
@@ -113,7 +122,7 @@ async function main() {
     if (Array.isArray(clientConfigs)) {
       for (const m of clientConfigs) {
         const quotaInfo = m.quotaInfo;
-        const remainingFraction = typeof quotaInfo?.remainingFraction === 'number' ? quotaInfo.remainingFraction : undefined;
+        let remainingFraction = typeof quotaInfo?.remainingFraction === 'number' ? quotaInfo.remainingFraction : undefined;
         const resetTime = typeof quotaInfo?.resetTime === 'string' ? quotaInfo.resetTime : undefined;
         let timeUntilResetMs = undefined;
         if (resetTime) {
@@ -121,8 +130,20 @@ async function main() {
           timeUntilResetMs = diff > 0 ? diff : undefined;
         }
 
+        const label = m.label || m.modelOrAlias?.model || 'unknown';
+        if (remainingFraction === undefined) {
+          const lowLabel = label.toLowerCase();
+          if (lowLabel.includes('claude') || lowLabel.includes('opus') || lowLabel.includes('sonnet') || lowLabel.includes('gpt')) {
+            remainingFraction = poolRemaining['3p'];
+          } else if (lowLabel.includes('argon')) {
+            remainingFraction = poolRemaining['argon'];
+          } else if (lowLabel.includes('gemini')) {
+            remainingFraction = poolRemaining['gemini'];
+          }
+        }
+
         result.models.push({
-          label: m.label || m.modelOrAlias?.model || 'unknown',
+          label,
           modelId: m.modelOrAlias?.model || 'unknown',
           remainingPercentage: remainingFraction,
           isExhausted: remainingFraction === 0,

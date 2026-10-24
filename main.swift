@@ -205,7 +205,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                    let payload = json["payload"] as? [String: Any],
                    let rateLimits = payload["rate_limits"] as? [String: Any] {
                     
-                    // Filter out lines where primary rate limit is missing or null
                     guard let primary = rateLimits["primary"] as? [String: Any],
                           let usedNum = primary["used_percent"] as? NSNumber else {
                         continue
@@ -407,21 +406,66 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
+        // Sorting and grouping helpers
+        func tierSortWeight(_ label: String) -> Int {
+            if label.contains("(High)") || label.contains("(Hi") { return 1 }
+            if label.contains("(Med") { return 2 }
+            if label.contains("(Low)") || label.contains("(Lo") { return 3 }
+            return 4
+        }
+        
+        func poolSortWeight(_ label: String) -> Int {
+            switch label {
+            case "Gemini 5h": return 1
+            case "Gemini Weekly": return 2
+            case "Claude/GPT 5h": return 3
+            case "Claude/GPT Weekly": return 4
+            case "Argon Weekly": return 5
+            default: return 99
+            }
+        }
+        
         let poolModels = filteredModels.filter { 
             $0.label == "Gemini Weekly" || $0.label == "Gemini 5h" ||
-            $0.label == "Claude/GPT Weekly" || $0.label == "Claude/GPT 5h"
-        }
+            $0.label == "Claude/GPT Weekly" || $0.label == "Claude/GPT 5h" ||
+            $0.label == "Argon Weekly"
+        }.sorted { poolSortWeight($0.label) < poolSortWeight($1.label) }
+        
         let codexModels = filteredModels.filter { $0.label.starts(with: "Codex") }
+            .sorted { ($0.label.contains("5h") ? 1 : 2) < ($1.label.contains("5h") ? 1 : 2) }
+        
         let individualModels = filteredModels.filter { model in
             !poolModels.contains(where: { $0.label == model.label }) &&
             !codexModels.contains(where: { $0.label == model.label })
         }
         
+        let geminiModels = individualModels.filter { model in
+            let l = model.label
+            return (l.contains("Gemini 3.8") || l.contains("Gemini 3.7") || l.contains("Gemini 3.5") || l.contains("Gemini Flash")) && !l.contains("Argon")
+        }.sorted { tierSortWeight($0.label) < tierSortWeight($1.label) }
+        
+        let argonModels = individualModels.filter { model in
+            model.label.contains("Argon")
+        }.sorted { tierSortWeight($0.label) < tierSortWeight($1.label) }
+        
+        func claudeSortWeight(_ label: String) -> Int {
+            let family = label.contains("Sonnet") ? 10 : (label.contains("Opus") ? 20 : 30)
+            return family + tierSortWeight(label)
+        }
+        
+        let claudeModels = individualModels.filter { model in
+            let l = model.label
+            return l.contains("Sonnet") || l.contains("Opus") || l.contains("Claude") || l.contains("GPT")
+        }.sorted { claudeSortWeight($0.label) < claudeSortWeight($1.label) }
+        
+        let handledIndividual = Set((geminiModels + argonModels + claudeModels).map { $0.label })
+        let otherModels = individualModels.filter { !handledIndividual.contains($0.label) }
+        
         func appendModelRow(_ model: ModelQuota) {
             let remainingPct = model.remainingPercentage ?? 1.0
             let pctVal = Int(round(remainingPct * 100))
             let bar = makeUnicodeBar(pct: remainingPct, width: 12)
-            let shortLabel = cleanModelLabel(model.label).padding(toLength: 18, withPad: " ", startingAt: 0)
+            let shortLabel = cleanModelLabel(model.label).padding(toLength: 22, withPad: " ", startingAt: 0)
             
             var resetStr = ""
             if let resetMs = model.timeUntilResetMs, resetMs > 0 {
@@ -444,35 +488,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(modelItem)
         }
         
-        if !poolModels.isEmpty {
-            let poolHeader = createMenuItem(text: "─── QUOTA POOLS (WEEKLY & 5H) ───", color: .secondaryLabelColor, isBold: true)
-            poolHeader.isEnabled = false
-            menu.addItem(poolHeader)
-            for model in poolModels {
+        func addSection(header: String, models: [ModelQuota]) {
+            guard !models.isEmpty else { return }
+            let headerItem = createMenuItem(text: header, color: .secondaryLabelColor, isBold: true)
+            headerItem.isEnabled = false
+            menu.addItem(headerItem)
+            for model in models {
                 appendModelRow(model)
             }
             menu.addItem(NSMenuItem.separator())
         }
         
-        if !individualModels.isEmpty {
-            let indHeader = createMenuItem(text: "─── INDIVIDUAL MODELS ───────────", color: .secondaryLabelColor, isBold: true)
-            indHeader.isEnabled = false
-            menu.addItem(indHeader)
-            for model in individualModels {
-                appendModelRow(model)
-            }
-            menu.addItem(NSMenuItem.separator())
+        addSection(header: "─── QUOTA POOLS (SUMMARY) ───────", models: poolModels)
+        addSection(header: "─── GEMINI 3.8 FLASH ────────────", models: geminiModels)
+        addSection(header: "─── GEMINI 4 ARGON ──────────────", models: argonModels)
+        addSection(header: "─── CLAUDE & GPT ────────────────", models: claudeModels)
+        if !otherModels.isEmpty {
+            addSection(header: "─── OTHER MODELS ────────────────", models: otherModels)
         }
-        
-        if !codexModels.isEmpty {
-            let codexHeader = createMenuItem(text: "─── CODEX LIMITS ────────────────", color: .secondaryLabelColor, isBold: true)
-            codexHeader.isEnabled = false
-            menu.addItem(codexHeader)
-            for model in codexModels {
-                appendModelRow(model)
-            }
-            menu.addItem(NSMenuItem.separator())
-        }
+        addSection(header: "─── CODEX LIMITS (OPENAI) ───────", models: codexModels)
         
         let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchItem.target = self
