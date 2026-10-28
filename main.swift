@@ -99,16 +99,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func formatResetTime(_ ms: Double) -> String {
-        guard ms > 0 else { return "No reset pending" }
+        guard ms > 0 else { return "" }
         let minutes = Int(ms / 60000)
         let hours = minutes / 60
         let mins = minutes % 60
+        
+        let targetDate = Date().addingTimeInterval(ms / 1000.0)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        
         if hours >= 24 {
             let days = hours / 24
             let remHours = hours % 24
-            return "Resets in \(days)d \(remHours)h"
+            formatter.dateFormat = "E HH:mm"
+            let dateStr = formatter.string(from: targetDate)
+            return " (Resets \(days)d \(remHours)h @ \(dateStr))"
+        } else if hours > 0 {
+            formatter.dateFormat = "HH:mm"
+            let dateStr = formatter.string(from: targetDate)
+            return " (Resets \(hours)h \(mins)m @ \(dateStr))"
+        } else {
+            formatter.dateFormat = "HH:mm"
+            let dateStr = formatter.string(from: targetDate)
+            return " (Resets \(mins)m @ \(dateStr))"
         }
-        return "Resets in \(hours)h \(mins)m"
     }
     
     func colorForPercentage(_ pct: Double) -> NSColor {
@@ -344,6 +359,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let valWk = Int(round(pWk * 100))
             if let button = statusBarItem.button {
                 button.title = "⚡ \(val5h)% (5h) · \(valWk)% (Wk)"
+                var tips: [String] = []
+                if let r5h = g5h.timeUntilResetMs, r5h > 0 {
+                    tips.append("Gemini 5h: \(val5h)%\(self.formatResetTime(r5h))")
+                }
+                if let rWk = gWk.timeUntilResetMs, rWk > 0 {
+                    tips.append("Gemini Weekly: \(valWk)%\(self.formatResetTime(rWk))")
+                }
+                button.toolTip = tips.isEmpty ? nil : tips.joined(separator: "\n")
             }
         } else {
             let flashHigh = filteredModels.first(where: { 
@@ -469,16 +492,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             var resetStr = ""
             if let resetMs = model.timeUntilResetMs, resetMs > 0 {
-                let minutes = Int(resetMs / 60000)
-                let hours = minutes / 60
-                let mins = minutes % 60
-                if hours >= 24 {
-                    let days = hours / 24
-                    let remHours = hours % 24
-                    resetStr = " (Resets \(days)d \(remHours)h)"
-                } else {
-                    resetStr = " (Resets \(hours)h \(mins)m)"
-                }
+                resetStr = formatResetTime(resetMs)
             }
             
             let rowText = "\(shortLabel) [\(bar)] \(String(format: "%3d%%", pctVal))\(resetStr)"
