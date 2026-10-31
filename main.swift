@@ -356,6 +356,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
+            
+            // Gemini 3.8: keep only High, remove Medium and Low
+            if lbl.contains("3.8") {
+                if !lbl.contains("(High)") && !lbl.contains("(Hi") {
+                    return false
+                }
+            }
             return true
         }
         
