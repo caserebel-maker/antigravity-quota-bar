@@ -22,6 +22,17 @@ struct CodexRateLimitInfo {
     let secondaryResetTimeMs: Double
 }
 
+struct ClaudeAppRateLimitInfo {
+    let fiveHourRemainingPct: Double
+    let fiveHourResetTimeMs: Double
+    let weeklyRemainingPct: Double
+    let weeklyResetTimeMs: Double
+    let opusRemainingPct: Double?
+    let opusResetTimeMs: Double?
+    let sonnetRemainingPct: Double?
+    let sonnetResetTimeMs: Double?
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarItem: NSStatusItem!
     var menu: NSMenu!
@@ -88,6 +99,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func cleanModelLabel(_ label: String) -> String {
+        if label.starts(with: "Claude App") {
+            return label
+        }
         return label
             .replacingOccurrences(of: "Claude ", with: "")
             .replacingOccurrences(of: " 4.6 (Thinking)", with: " 4.6 (Think)")
@@ -258,6 +272,86 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return nil
     }
     
+    func getClaudeAppQuota() -> ClaudeAppRateLimitInfo? {
+        let fileManager = FileManager.default
+        let homeDir = fileManager.homeDirectoryForCurrentUser
+        let historyFile = homeDir.appendingPathComponent("Library/Application Support/Claude/plan-usage-history.json")
+        
+        guard fileManager.fileExists(atPath: historyFile.path),
+              let data = try? Data(contentsOf: historyFile),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let samples = json["samples"] as? [[String: Any]],
+              !samples.isEmpty else {
+            return nil
+        }
+        
+        guard let latest = samples.max(by: {
+            let t1 = ($0["t"] as? NSNumber)?.int64Value ?? 0
+            let t2 = ($1["t"] as? NSNumber)?.int64Value ?? 0
+            return t1 < t2
+        }) else {
+            return nil
+        }
+        
+        let sampleTimeMs = (latest["t"] as? NSNumber)?.doubleValue ?? 0.0
+        let nowMs = Date().timeIntervalSince1970 * 1000.0
+        
+        let u = latest["u"] as? [String: Any] ?? [:]
+        
+        let fhUsed = (u["fh"] as? NSNumber)?.doubleValue ?? 0.0
+        let fiveHourRemaining = max(0.0, 1.0 - fhUsed)
+        var fiveHourResetMs = 0.0
+        if fhUsed > 0 && sampleTimeMs > 0 {
+            let expireMs = sampleTimeMs + (5.0 * 3600.0 * 1000.0)
+            fiveHourResetMs = max(0.0, expireMs - nowMs)
+        }
+        
+        let sdUsed = (u["sd"] as? NSNumber)?.doubleValue ?? 0.0
+        let weeklyRemaining = max(0.0, 1.0 - sdUsed)
+        var weeklyResetMs = 0.0
+        if sdUsed > 0 && sampleTimeMs > 0 {
+            let expireMs = sampleTimeMs + (7.0 * 24.0 * 3600.0 * 1000.0)
+            weeklyResetMs = max(0.0, expireMs - nowMs)
+        }
+        
+        var opusRemaining: Double? = nil
+        var opusResetMs: Double? = nil
+        if let soUsedNum = u["so"] as? NSNumber {
+            let soUsed = soUsedNum.doubleValue
+            opusRemaining = max(0.0, 1.0 - soUsed)
+            if soUsed > 0 && sampleTimeMs > 0 {
+                let expireMs = sampleTimeMs + (7.0 * 24.0 * 3600.0 * 1000.0)
+                opusResetMs = max(0.0, expireMs - nowMs)
+            } else {
+                opusResetMs = 0.0
+            }
+        }
+        
+        var sonnetRemaining: Double? = nil
+        var sonnetResetMs: Double? = nil
+        if let snUsedNum = u["sn"] as? NSNumber {
+            let snUsed = snUsedNum.doubleValue
+            sonnetRemaining = max(0.0, 1.0 - snUsed)
+            if snUsed > 0 && sampleTimeMs > 0 {
+                let expireMs = sampleTimeMs + (7.0 * 24.0 * 3600.0 * 1000.0)
+                sonnetResetMs = max(0.0, expireMs - nowMs)
+            } else {
+                sonnetResetMs = 0.0
+            }
+        }
+        
+        return ClaudeAppRateLimitInfo(
+            fiveHourRemainingPct: fiveHourRemaining,
+            fiveHourResetTimeMs: fiveHourResetMs,
+            weeklyRemainingPct: weeklyRemaining,
+            weeklyResetTimeMs: weeklyResetMs,
+            opusRemainingPct: opusRemaining,
+            opusResetTimeMs: opusResetMs,
+            sonnetRemainingPct: sonnetRemaining,
+            sonnetResetTimeMs: sonnetResetMs
+        )
+    }
+    
     @objc func refresh() {
         refreshData()
     }
@@ -281,9 +375,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             
             let codexInfo = self?.getCodexQuota()
+            let claudeAppInfo = self?.getClaudeAppQuota()
             
             DispatchQueue.main.async {
                 if var validOutput = output {
+                    if let claudeApp = claudeAppInfo {
+                        validOutput.models.append(ModelQuota(
+                            label: "Claude App (5h)",
+                            remainingPercentage: claudeApp.fiveHourRemainingPct,
+                            timeUntilResetMs: claudeApp.fiveHourResetTimeMs > 0 ? claudeApp.fiveHourResetTimeMs : nil
+                        ))
+                        validOutput.models.append(ModelQuota(
+                            label: "Claude App (Weekly)",
+                            remainingPercentage: claudeApp.weeklyRemainingPct,
+                            timeUntilResetMs: claudeApp.weeklyResetTimeMs > 0 ? claudeApp.weeklyResetTimeMs : nil
+                        ))
+                        if let opusPct = claudeApp.opusRemainingPct {
+                            validOutput.models.append(ModelQuota(
+                                label: "Claude App (Opus)",
+                                remainingPercentage: opusPct,
+                                timeUntilResetMs: claudeApp.opusResetTimeMs
+                            ))
+                        }
+                        if let sonnetPct = claudeApp.sonnetRemainingPct {
+                            validOutput.models.append(ModelQuota(
+                                label: "Claude App (Sonnet)",
+                                remainingPercentage: sonnetPct,
+                                timeUntilResetMs: claudeApp.sonnetResetTimeMs
+                            ))
+                        }
+                    }
                     if let codex = codexInfo {
                         validOutput.models.append(ModelQuota(
                             label: "Codex 5h",
@@ -297,22 +418,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         ))
                     }
                     self?.updateUI(with: validOutput)
-                } else if let codex = codexInfo {
+                } else if codexInfo != nil || claudeAppInfo != nil {
                     var fallbackModels: [ModelQuota] = []
-                    fallbackModels.append(ModelQuota(
-                        label: "Codex 5h",
-                        remainingPercentage: codex.primaryRemainingPct,
-                        timeUntilResetMs: codex.primaryResetTimeMs
-                    ))
-                    fallbackModels.append(ModelQuota(
-                        label: "Codex Weekly",
-                        remainingPercentage: codex.secondaryRemainingPct,
-                        timeUntilResetMs: codex.secondaryResetTimeMs
-                    ))
+                    if let claudeApp = claudeAppInfo {
+                        fallbackModels.append(ModelQuota(
+                            label: "Claude App (5h)",
+                            remainingPercentage: claudeApp.fiveHourRemainingPct,
+                            timeUntilResetMs: claudeApp.fiveHourResetTimeMs > 0 ? claudeApp.fiveHourResetTimeMs : nil
+                        ))
+                        fallbackModels.append(ModelQuota(
+                            label: "Claude App (Weekly)",
+                            remainingPercentage: claudeApp.weeklyRemainingPct,
+                            timeUntilResetMs: claudeApp.weeklyResetTimeMs > 0 ? claudeApp.weeklyResetTimeMs : nil
+                        ))
+                    }
+                    if let codex = codexInfo {
+                        fallbackModels.append(ModelQuota(
+                            label: "Codex 5h",
+                            remainingPercentage: codex.primaryRemainingPct,
+                            timeUntilResetMs: codex.primaryResetTimeMs
+                        ))
+                        fallbackModels.append(ModelQuota(
+                            label: "Codex Weekly",
+                            remainingPercentage: codex.secondaryRemainingPct,
+                            timeUntilResetMs: codex.secondaryResetTimeMs
+                        ))
+                    }
                     
                     let fallbackOutput = QuotaData(
                         email: "Antigravity CLI Offline",
-                        method: "Codex Local Log",
+                        method: "Local Cache",
                         timestamp: ISO8601DateFormatter().string(from: Date()),
                         models: fallbackModels
                     )
@@ -372,7 +507,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if lbl.contains("3.7") && lbl.contains("Low") { return false }
             
             // Claude Sonnet & Opus: keep only High, remove Medium and Low
-            if lbl.contains("Sonnet") || lbl.contains("Opus") || lbl.contains("Claude") {
+            if (lbl.contains("Sonnet") || lbl.contains("Opus") || lbl.contains("Claude")) && !lbl.starts(with: "Claude App") {
                 if !lbl.contains("Claude/GPT") { // keep pool summary models (Claude/GPT 5h, Claude/GPT Weekly)
                     if !lbl.contains("(High)") && !lbl.contains("(Hi") {
                         return false
@@ -493,11 +628,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             $0.label == "Argon Weekly"
         }.sorted { poolSortWeight($0.label) < poolSortWeight($1.label) }
         
+        let claudeAppModels = filteredModels.filter { $0.label.starts(with: "Claude App") }
+            .sorted { ($0.label.contains("5h") ? 1 : ($0.label.contains("Weekly") ? 2 : 3)) < ($1.label.contains("5h") ? 1 : ($1.label.contains("Weekly") ? 2 : 3)) }
+        
         let codexModels = filteredModels.filter { $0.label.starts(with: "Codex") }
             .sorted { ($0.label.contains("5h") ? 1 : 2) < ($1.label.contains("5h") ? 1 : 2) }
         
         let individualModels = filteredModels.filter { model in
             !poolModels.contains(where: { $0.label == model.label }) &&
+            !claudeAppModels.contains(where: { $0.label == model.label }) &&
             !codexModels.contains(where: { $0.label == model.label })
         }
         
@@ -553,6 +692,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         addSection(header: "─── QUOTA POOLS (SUMMARY) ───────", models: poolModels)
+        addSection(header: "─── CLAUDE APP (OFFICIAL SUB) ───", models: claudeAppModels)
         addSection(header: "─── GEMINI 3.8 FLASH ────────────", models: geminiModels)
         addSection(header: "─── GEMINI 4 ARGON ──────────────", models: argonModels)
         addSection(header: "─── CLAUDE & GPT (ANTIGRAVITY) ──", models: claudeModels)

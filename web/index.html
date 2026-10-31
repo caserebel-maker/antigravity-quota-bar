@@ -427,6 +427,9 @@
     }
 
     function cleanLabel(label) {
+      if (label.startsWith('Claude App')) {
+        return label;
+      }
       return label
         .replace('Claude ', '')
         .replace(' Flash ', ' ')
@@ -449,7 +452,7 @@
         if (lbl.includes('3.7') && lbl.includes('Low')) return false;
         
         // Claude Sonnet & Opus: only keep High
-        if (lbl.includes('Sonnet') || lbl.includes('Opus') || lbl.includes('Claude')) {
+        if ((lbl.includes('Sonnet') || lbl.includes('Opus') || lbl.includes('Claude')) && !lbl.startsWith('Claude App')) {
           if (!lbl.includes('Claude/GPT')) {
             if (!lbl.includes('(High)') && !lbl.includes('(Hi')) return false;
           }
@@ -468,9 +471,16 @@
         ['Gemini 5h', 'Gemini Weekly', 'Claude/GPT 5h', 'Claude/GPT Weekly', 'Argon Weekly'].includes(m.label)
       );
 
+      const claudeApp = models.filter(m => m.label.startsWith('Claude App'))
+        .sort((a, b) => {
+          const wA = a.label.includes('5h') ? 1 : (a.label.includes('Weekly') ? 2 : 3);
+          const wB = b.label.includes('5h') ? 1 : (b.label.includes('Weekly') ? 2 : 3);
+          return wA - wB;
+        });
+
       const gemini38 = models.filter(m => m.label.includes('3.8'));
       const argon = models.filter(m => m.label.includes('Argon') && !m.label.includes('Weekly'));
-      const claude = models.filter(m => (m.label.includes('Sonnet') || m.label.includes('Opus')) && !m.label.includes('Weekly') && !m.label.includes('5h'));
+      const claude = models.filter(m => (m.label.includes('Sonnet') || m.label.includes('Opus')) && !m.label.includes('Weekly') && !m.label.includes('5h') && !m.label.startsWith('Claude App'));
       const codex = models.filter(m => m.label.startsWith('Codex'));
 
       function renderGroup(title, groupModels) {
@@ -532,6 +542,7 @@
 
       let html = '';
       html += renderGroup('Quota Pools (Summary)', pools);
+      html += renderGroup('Claude App (Official Sub)', claudeApp);
       html += renderGroup('Gemini 3.8 Flash', gemini38);
       html += renderGroup('Gemini 4 Argon', argon);
       html += renderGroup('Claude & GPT (Antigravity)', claude);
