@@ -203,54 +203,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
-        guard let latestFile = jsonlFiles.sorted(by: { $0.date > $1.date }).first else {
-            return nil
-        }
+        let sortedFiles = jsonlFiles.sorted(by: { $0.date > $1.date })
         
-        guard let content = try? String(contentsOf: latestFile.url, encoding: .utf8) else {
-            return nil
-        }
-        
-        let lines = content.components(separatedBy: .newlines)
-        
-        for line in lines.reversed() {
-            if line.contains("rate_limits") {
-                if let data = line.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let payload = json["payload"] as? [String: Any],
-                   let rateLimits = payload["rate_limits"] as? [String: Any] {
-                    
-                    guard let primary = rateLimits["primary"] as? [String: Any],
-                          let usedNum = primary["used_percent"] as? NSNumber else {
-                        continue
-                    }
-                    
-                    let primaryPct = max(0.0, 1.0 - (usedNum.doubleValue / 100.0))
-                    var primaryResetMs = 0.0
-                    var secondaryPct = 1.0
-                    var secondaryResetMs = 0.0
-                    
-                    let now = Date().timeIntervalSince1970
-                    
-                    if let resetsAtNum = primary["resets_at"] as? NSNumber {
-                        primaryResetMs = max(0.0, (resetsAtNum.doubleValue - now) * 1000.0)
-                    }
-                    
-                    if let secondary = rateLimits["secondary"] as? [String: Any] {
-                        if let secUsedNum = secondary["used_percent"] as? NSNumber {
-                            secondaryPct = max(0.0, 1.0 - (secUsedNum.doubleValue / 100.0))
+        for file in sortedFiles.prefix(20) {
+            guard let content = try? String(contentsOf: file.url, encoding: .utf8) else {
+                continue
+            }
+            
+            let lines = content.components(separatedBy: .newlines)
+            
+            for line in lines.reversed() {
+                if line.contains("rate_limits") {
+                    if let data = line.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let payload = json["payload"] as? [String: Any],
+                       let rateLimits = payload["rate_limits"] as? [String: Any] {
+                        
+                        guard let primary = rateLimits["primary"] as? [String: Any],
+                              let usedNum = primary["used_percent"] as? NSNumber else {
+                            continue
                         }
-                        if let secResetsAtNum = secondary["resets_at"] as? NSNumber {
-                            secondaryResetMs = max(0.0, (secResetsAtNum.doubleValue - now) * 1000.0)
+                        
+                        let primaryPct = max(0.0, 1.0 - (usedNum.doubleValue / 100.0))
+                        var primaryResetMs = 0.0
+                        var secondaryPct = 1.0
+                        var secondaryResetMs = 0.0
+                        
+                        let now = Date().timeIntervalSince1970
+                        
+                        if let resetsAtNum = primary["resets_at"] as? NSNumber {
+                            primaryResetMs = max(0.0, (resetsAtNum.doubleValue - now) * 1000.0)
                         }
+                        
+                        if let secondary = rateLimits["secondary"] as? [String: Any] {
+                            if let secUsedNum = secondary["used_percent"] as? NSNumber {
+                                secondaryPct = max(0.0, 1.0 - (secUsedNum.doubleValue / 100.0))
+                            }
+                            if let secResetsAtNum = secondary["resets_at"] as? NSNumber {
+                                secondaryResetMs = max(0.0, (secResetsAtNum.doubleValue - now) * 1000.0)
+                            }
+                        }
+                        
+                        return CodexRateLimitInfo(
+                            primaryRemainingPct: primaryPct,
+                            primaryResetTimeMs: primaryResetMs,
+                            secondaryRemainingPct: secondaryPct,
+                            secondaryResetTimeMs: secondaryResetMs
+                        )
                     }
-                    
-                    return CodexRateLimitInfo(
-                        primaryRemainingPct: primaryPct,
-                        primaryResetTimeMs: primaryResetMs,
-                        secondaryRemainingPct: secondaryPct,
-                        secondaryResetTimeMs: secondaryResetMs
-                    )
                 }
             }
         }
