@@ -1,81 +1,85 @@
 #!/usr/bin/env node
+const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 
-function getSessionKey() {
-  const home = process.env.HOME || '';
-  const envPaths = [
-    path.join(home, '.env'),
-    path.join(home, 'Library/Application Support/AntigravityQuotaBar/.env'),
-    path.join(__dirname, '.env')
-  ];
+const HOME = process.env.HOME || '';
+const CACHE_FILE = path.join(HOME, 'Library/Application Support/AntigravityQuotaBar/claude-app-usage.json');
+const ORG_ID = 'c1aad3f0-f1a4-419b-ac9b-3c18f4eb9bf3';
 
-  for (const p of envPaths) {
-    if (fs.existsSync(p)) {
-      try {
-        const content = fs.readFileSync(p, 'utf8');
-        for (const line of content.split('\n')) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith('CLAUDE_SESSION_KEY=')) {
-            const val = trimmed.substring('CLAUDE_SESSION_KEY='.length).trim();
-            if (val) return val.replace(/^["']|["']$/g, '');
-          }
-        }
-      } catch (_) {}
+function tryBrowserFetch() {
+  const browsers = ['Brave Browser', 'Google Chrome', 'Microsoft Edge', 'Safari'];
+  
+  for (const browser of browsers) {
+    let script = '';
+    if (browser === 'Safari') {
+      script = `tell application "Safari"
+  repeat with w in windows
+    repeat with t in tabs of w
+      if URL of t contains "claude.ai" then
+        return (do JavaScript "(()=>{try{var x=new XMLHttpRequest();x.open(\\"GET\\",\\"/api/organizations/${ORG_ID}/usage\\",false);x.send(null);return x.responseText;}catch(e){return \\"\\";}})()" in t)
+      end if
+    end repeat
+  end repeat
+end tell`;
+    } else {
+      script = `tell application "${browser}"
+  repeat with w in windows
+    repeat with t in tabs of w
+      if URL of t contains "claude.ai" then
+        return (execute t javascript "(()=>{try{var x=new XMLHttpRequest();x.open(\\"GET\\",\\"/api/organizations/${ORG_ID}/usage\\",false);x.send(null);return x.responseText;}catch(e){return \\"\\";}})()")
+      end if
+    end repeat
+  end repeat
+end tell`;
     }
+
+    try {
+      const out = execSync('osascript', {
+        input: script,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+        timeout: 5000
+      }).trim();
+
+      if (out && out.startsWith('{') && out.includes('limits')) {
+        try {
+          fs.writeFileSync(CACHE_FILE, out, 'utf8');
+        } catch (_) {}
+        return out;
+      }
+    } catch (_) {}
+  }
+
+  return null;
+}
+
+function tryCachedFile() {
+  if (fs.existsSync(CACHE_FILE)) {
+    try {
+      const content = fs.readFileSync(CACHE_FILE, 'utf8').trim();
+      if (content.startsWith('{') && content.includes('limits')) {
+        return content;
+      }
+    } catch (_) {}
   }
   return null;
 }
 
-function request(url, headers) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { headers }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            resolve(JSON.parse(data));
-          } catch (e) {
-            reject(new Error('Invalid JSON response'));
-          }
-        } else {
-          reject(new Error(`HTTP ${res.statusCode}: ${data}`));
-        }
-      });
-    }).on('error', reject);
-  });
-}
-
-async function main() {
-  const sessionKey = getSessionKey();
-  if (!sessionKey) {
-    process.exit(1);
+function main() {
+  const liveData = tryBrowserFetch();
+  if (liveData) {
+    console.log(liveData);
+    process.exit(0);
   }
 
-  const cookie = sessionKey.startsWith('sessionKey=') ? sessionKey : `sessionKey=${sessionKey}`;
-  const headers = {
-    'Cookie': cookie,
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json'
-  };
-
-  try {
-    let orgId = 'c1aad3f0-f1a4-419b-ac9b-3c18f4eb9bf3';
-    try {
-      const orgs = await request('https://claude.ai/api/organizations', headers);
-      if (Array.isArray(orgs) && orgs.length > 0) {
-        orgId = orgs[0].uuid || orgId;
-      }
-    } catch (_) {}
-
-    const usage = await request(`https://claude.ai/api/organizations/${orgId}/usage`, headers);
-    console.log(JSON.stringify(usage));
-  } catch (err) {
-    process.stderr.write(`Error: ${err.message}\n`);
-    process.exit(1);
+  const cachedData = tryCachedFile();
+  if (cachedData) {
+    console.log(cachedData);
+    process.exit(0);
   }
+
+  process.exit(1);
 }
 
 main();
