@@ -347,6 +347,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if lbl.contains("3.1") || lbl.contains("3.6") { return false }
             if lbl.contains("GPT-OSS") || lbl.lowercased().contains("gptoss") { return false }
             if lbl.contains("3.7") && lbl.contains("Low") { return false }
+            
+            // Claude Sonnet & Opus: keep only High, remove Medium and Low
+            if lbl.contains("Sonnet") || lbl.contains("Opus") || lbl.contains("Claude") {
+                if !lbl.contains("Claude/GPT") { // keep pool summary models (Claude/GPT 5h, Claude/GPT Weekly)
+                    if !lbl.contains("(High)") && !lbl.contains("(Hi") {
+                        return false
+                    }
+                }
+            }
             return true
         }
         
