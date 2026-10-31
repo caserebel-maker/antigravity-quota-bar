@@ -272,7 +272,109 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return nil
     }
     
+    func runFetchClaudeQuota() -> String? {
+        let task = Process()
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let appSupportScript = "\(homeDir)/Library/Application Support/AntigravityQuotaBar/fetch-claude-quota.js"
+        let currentDirScript = "\(FileManager.default.currentDirectoryPath)/fetch-claude-quota.js"
+        
+        let cmd = """
+        if [ -f "\(appSupportScript)" ]; then
+            node "\(appSupportScript)" 2>/dev/null
+        elif [ -f "\(currentDirScript)" ]; then
+            node "\(currentDirScript)" 2>/dev/null
+        fi
+        """
+        
+        task.arguments = ["-lc", cmd]
+        task.launchPath = "/bin/zsh"
+        
+        var env = ProcessInfo.processInfo.environment
+        let nvmBinDir = "\(homeDir)/.nvm/versions/node"
+        var nodePaths: [String] = []
+        if let contents = try? FileManager.default.contentsOfDirectory(atPath: nvmBinDir) {
+            for v in contents {
+                nodePaths.append("\(nvmBinDir)/\(v)/bin")
+            }
+        }
+        let extraPaths = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "\(homeDir)/.local/bin"
+        ] + nodePaths
+        
+        let currentPath = env["PATH"] ?? ""
+        env["PATH"] = (extraPaths + [currentPath]).joined(separator: ":")
+        task.environment = env
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (output?.isEmpty ?? true) ? nil : output
+        } catch {
+            return nil
+        }
+    }
+    
     func getClaudeAppQuota() -> ClaudeAppRateLimitInfo? {
+        if let rawOutput = runFetchClaudeQuota(),
+           let data = rawOutput.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let limits = json["limits"] as? [[String: Any]],
+           !limits.isEmpty {
+            
+            var fiveHourPct = 1.0
+            var fiveHourResetMs = 0.0
+            var weeklyPct = 1.0
+            var weeklyResetMs = 0.0
+            
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let fallbackIso = ISO8601DateFormatter()
+            fallbackIso.formatOptions = [.withInternetDateTime]
+            let now = Date().timeIntervalSince1970
+            
+            for limit in limits {
+                let kind = limit["kind"] as? String ?? ""
+                let percentUsed = (limit["percent"] as? NSNumber)?.doubleValue ?? 0.0
+                let remainingPct = max(0.0, 1.0 - (percentUsed / 100.0))
+                
+                var resetTimeMs = 0.0
+                if let resetsAtStr = limit["resets_at"] as? String {
+                    if let targetDate = isoFormatter.date(from: resetsAtStr) ?? fallbackIso.date(from: resetsAtStr) {
+                        resetTimeMs = max(0.0, (targetDate.timeIntervalSince1970 - now) * 1000.0)
+                    }
+                }
+                
+                if kind == "session" {
+                    fiveHourPct = remainingPct
+                    fiveHourResetMs = resetTimeMs
+                } else if kind == "weekly_all" {
+                    weeklyPct = remainingPct
+                    weeklyResetMs = resetTimeMs
+                }
+            }
+            
+            return ClaudeAppRateLimitInfo(
+                fiveHourRemainingPct: fiveHourPct,
+                fiveHourResetTimeMs: fiveHourResetMs,
+                weeklyRemainingPct: weeklyPct,
+                weeklyResetTimeMs: weeklyResetMs,
+                opusRemainingPct: nil,
+                opusResetTimeMs: nil,
+                sonnetRemainingPct: nil,
+                sonnetResetTimeMs: nil
+            )
+        }
+
         let fileManager = FileManager.default
         let homeDir = fileManager.homeDirectoryForCurrentUser
         let historyFile = homeDir.appendingPathComponent("Library/Application Support/Claude/plan-usage-history.json")
