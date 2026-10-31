@@ -555,7 +555,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         addSection(header: "─── QUOTA POOLS (SUMMARY) ───────", models: poolModels)
         addSection(header: "─── GEMINI 3.8 FLASH ────────────", models: geminiModels)
         addSection(header: "─── GEMINI 4 ARGON ──────────────", models: argonModels)
-        addSection(header: "─── CLAUDE & GPT ────────────────", models: claudeModels)
+        addSection(header: "─── CLAUDE & GPT (ANTIGRAVITY) ──", models: claudeModels)
         if !otherModels.isEmpty {
             addSection(header: "─── OTHER MODELS ────────────────", models: otherModels)
         }
