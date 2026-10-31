@@ -16,6 +16,10 @@ echo "📦 Installing binary & helper to: $INSTALL_DIR"
 cp AntigravityQuota "$INSTALL_DIR/AntigravityQuota"
 cp fetch-quota.js "$INSTALL_DIR/fetch-quota.js"
 chmod +x "$INSTALL_DIR/fetch-quota.js"
+if [ -f sync-cloud.sh ]; then
+    cp sync-cloud.sh "$INSTALL_DIR/sync-cloud.sh"
+    chmod +x "$INSTALL_DIR/sync-cloud.sh"
+fi
 
 echo "🔑 Signing binary in target folder..."
 codesign -f -s - "$INSTALL_DIR/AntigravityQuota"

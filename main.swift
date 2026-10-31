@@ -339,8 +339,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    func syncToCloud(output: QuotaData) {
+        DispatchQueue.global(qos: .background).async {
+            let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("AntigravityQuotaBar")
+            guard let dir = appSupportDir else { return }
+            let jsonPath = dir.appendingPathComponent("quota.json")
+            let scriptPath = dir.appendingPathComponent("sync-cloud.sh")
+            
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            if let data = try? encoder.encode(output) {
+                try? data.write(to: jsonPath)
+            }
+            
+            if FileManager.default.fileExists(atPath: scriptPath.path) {
+                let task = Process()
+                task.launchPath = "/bin/bash"
+                task.arguments = [scriptPath.path]
+                try? task.run()
+            }
+        }
+    }
+    
     func updateUI(with output: QuotaData) {
         isFetching = false
+        syncToCloud(output: output)
         
         let filteredModels = output.models.filter { model in
             let lbl = model.label
