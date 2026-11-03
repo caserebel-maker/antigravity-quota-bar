@@ -43,7 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusBarItem.button {
-            button.title = "⚡ ..."
+            button.title = "🧠"
         }
         
         menu = NSMenu()
@@ -463,7 +463,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         isFetching = true
         
         if let button = statusBarItem.button {
-            button.title = "⚡ ⌛"
+            button.title = "🧠"
         }
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -634,7 +634,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let val5h = Int(round(p5h * 100))
             let valWk = Int(round(pWk * 100))
             if let button = statusBarItem.button {
-                button.title = "⚡ \(val5h)% (5h) · \(valWk)% (Wk)"
+                button.title = "🧠"
                 var tips: [String] = []
                 if let r5h = g5h.timeUntilResetMs, r5h > 0 {
                     tips.append("Gemini 5h: \(val5h)%\(self.formatResetTime(r5h))")
@@ -642,7 +642,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if let rWk = gWk.timeUntilResetMs, rWk > 0 {
                     tips.append("Gemini Weekly: \(valWk)%\(self.formatResetTime(rWk))")
                 }
-                button.toolTip = tips.isEmpty ? nil : tips.joined(separator: "\n")
+                tips.append("Click to view full quota status")
+                button.toolTip = tips.joined(separator: "\n")
             }
         } else {
             let flashHigh = filteredModels.first(where: { 
@@ -679,13 +680,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             
             if let button = statusBarItem.button {
-                button.title = "⚡ \(displayPct)% (\(shortName))"
+                button.title = "🧠"
+                button.toolTip = "Lowest: \(displayPct)% (\(shortName))\nClick to view full quota status"
             }
         }
         
         menu.removeAllItems()
         
-        let titleItem = createMenuItem(text: "⚡ ANTIGRAVITY QUOTA STATUS", isBold: true)
+        let titleItem = createMenuItem(text: "🧠 ANTIGRAVITY QUOTA STATUS", isBold: true)
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         
@@ -822,11 +824,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func updateUIWithError(_ errorMsg: String) {
         isFetching = false
         if let button = statusBarItem.button {
-            button.title = "⚡ Err"
+            button.title = "🧠"
+            button.toolTip = "Error fetching quota: \(errorMsg)"
         }
         
         menu.removeAllItems()
-        let errTitle = createMenuItem(text: "⚡ QUOTA ERROR", color: .systemRed, isBold: true)
+        let errTitle = createMenuItem(text: "🧠 QUOTA ERROR", color: .systemRed, isBold: true)
         errTitle.isEnabled = false
         menu.addItem(errTitle)
         

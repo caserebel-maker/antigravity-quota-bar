@@ -39,4 +39,4 @@ else
 fi
 
 echo "🎉 AntigravityQuota successfully installed and started!"
-echo "Check your menu bar (top right) for the ⚡ icon!"
+echo "Check your menu bar (top right) for the 🧠 icon!"
