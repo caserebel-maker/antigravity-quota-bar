@@ -310,6 +310,18 @@
       background: linear-gradient(90deg, rgba(16, 185, 129, 0.8), rgba(16, 185, 129, 0.2) 70%, transparent);
     }
 
+    /* 5. Grok Bot: สีแดงกุหลาบ xAI */
+    .capsule-grok {
+      background: linear-gradient(90deg, rgba(244, 63, 94, 0.22) 0%, rgba(244, 63, 94, 0.08) 60%, rgba(244, 63, 94, 0.02) 100%);
+      border: 1.5px solid rgba(244, 63, 94, 0.5);
+      box-shadow: 0 0 16px rgba(244, 63, 94, 0.2), inset 0 0 12px rgba(244, 63, 94, 0.08);
+      color: #fb7185;
+    }
+
+    .capsule-grok .capsule-line {
+      background: linear-gradient(90deg, rgba(244, 63, 94, 0.8), rgba(244, 63, 94, 0.2) 70%, transparent);
+    }
+
     /* 3-Column Grid Layout */
     .cards-grid {
       display: grid;
@@ -699,6 +711,8 @@
           return wA - wB;
         });
 
+      const grokBot = models.filter(m => m.label.startsWith('Grok Bot'));
+
       const pools = models.filter(m => 
         ['Gemini 5h', 'Gemini Weekly', 'Claude/GPT 5h', 'Claude/GPT Weekly', 'Argon Weekly'].includes(m.label)
       );
@@ -779,6 +793,9 @@
       let html = '';
       if (claudeApp.length > 0) {
         html += renderGroup('Claude App · Official Sub', claudeApp, 'claude', '🟠');
+      }
+      if (grokBot.length > 0) {
+        html += renderGroup('Grok Bot · xAI', grokBot, 'grok', '⚡');
       }
       html += renderGroup('Quota Pools · Summary', pools, 'pools', '📊');
       if (agyModels.length > 0) {

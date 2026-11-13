@@ -33,6 +33,12 @@ struct ClaudeAppRateLimitInfo {
     let sonnetResetTimeMs: Double?
 }
 
+struct GrokBotRateLimitInfo {
+    let remainingPct: Double
+    let resetTimeMs: Double?
+    let planLabel: String
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarItem: NSStatusItem!
     var menu: NSMenu!
@@ -99,7 +105,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func cleanModelLabel(_ label: String) -> String {
-        if label.starts(with: "Claude App") {
+        if label.starts(with: "Claude App") || label.starts(with: "Grok Bot") {
             return label
         }
         return label
@@ -454,6 +460,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
     
+    func getGrokBotQuota() -> GrokBotRateLimitInfo? {
+        let fileManager = FileManager.default
+        let homeDir = fileManager.homeDirectoryForCurrentUser
+        let persistenceDir = homeDir.appendingPathComponent("Library/Application Support/Grok Bot/sand-client-persistence")
+        
+        guard let files = try? fileManager.contentsOfDirectory(at: persistenceDir, includingPropertiesForKeys: nil) else {
+            return nil
+        }
+        
+        for fileURL in files {
+            guard fileURL.pathExtension == "blob" else { continue }
+            guard let data = try? Data(contentsOf: fileURL),
+                  let str = String(data: data, encoding: .utf8),
+                  str.contains("percentUsed") && str.contains("nextResetMs") else {
+                continue
+            }
+            
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let val = json["value"] as? [String: Any],
+                  let reading = val["reading"] as? [String: Any],
+                  let usage = reading["usage"] as? [String: Any] else {
+                continue
+            }
+            
+            let percentUsed = (usage["percentUsed"] as? NSNumber)?.doubleValue ?? 0.0
+            let remainingPct = max(0.0, min(1.0, (100.0 - percentUsed) / 100.0))
+            
+            var resetMs: Double? = nil
+            if let nextResetNum = usage["nextResetMs"] as? NSNumber {
+                let nextResetEpochMs = nextResetNum.doubleValue
+                let nowMs = Date().timeIntervalSince1970 * 1000.0
+                resetMs = max(0.0, nextResetEpochMs - nowMs)
+            }
+            
+            let plan = (usage["grokPlanLabel"] as? String) ?? (usage["unifiedPlanName"] as? String) ?? "Grok Bot"
+            
+            return GrokBotRateLimitInfo(
+                remainingPct: remainingPct,
+                resetTimeMs: resetMs,
+                planLabel: plan
+            )
+        }
+        
+        return nil
+    }
+    
     @objc func refresh() {
         refreshData()
     }
@@ -478,6 +530,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             let codexInfo = self?.getCodexQuota()
             let claudeAppInfo = self?.getClaudeAppQuota()
+            let grokBotInfo = self?.getGrokBotQuota()
             
             DispatchQueue.main.async {
                 if var validOutput = output {
@@ -507,6 +560,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             ))
                         }
                     }
+                    if let grok = grokBotInfo {
+                        validOutput.models.append(ModelQuota(
+                            label: "Grok Bot (Weekly)",
+                            remainingPercentage: grok.remainingPct,
+                            timeUntilResetMs: grok.resetTimeMs
+                        ))
+                    }
                     if let codex = codexInfo {
                         validOutput.models.append(ModelQuota(
                             label: "Codex 5h",
@@ -520,7 +580,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         ))
                     }
                     self?.updateUI(with: validOutput)
-                } else if codexInfo != nil || claudeAppInfo != nil {
+                } else if codexInfo != nil || claudeAppInfo != nil || grokBotInfo != nil {
                     var fallbackModels: [ModelQuota] = []
                     if let claudeApp = claudeAppInfo {
                         fallbackModels.append(ModelQuota(
@@ -532,6 +592,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             label: "Claude App (Weekly)",
                             remainingPercentage: claudeApp.weeklyRemainingPct,
                             timeUntilResetMs: claudeApp.weeklyResetTimeMs > 0 ? claudeApp.weeklyResetTimeMs : nil
+                        ))
+                    }
+                    if let grok = grokBotInfo {
+                        fallbackModels.append(ModelQuota(
+                            label: "Grok Bot (Weekly)",
+                            remainingPercentage: grok.remainingPct,
+                            timeUntilResetMs: grok.resetTimeMs
                         ))
                     }
                     if let codex = codexInfo {
@@ -740,12 +807,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let claudeAppModels = filteredModels.filter { $0.label.starts(with: "Claude App") }
             .sorted { ($0.label.contains("5h") ? 1 : ($0.label.contains("Weekly") ? 2 : 3)) < ($1.label.contains("5h") ? 1 : ($1.label.contains("Weekly") ? 2 : 3)) }
         
+        let grokBotModels = filteredModels.filter { $0.label.starts(with: "Grok Bot") }
+
         let codexModels = filteredModels.filter { $0.label.starts(with: "Codex") }
             .sorted { ($0.label.contains("5h") ? 1 : 2) < ($1.label.contains("5h") ? 1 : 2) }
         
         let individualModels = filteredModels.filter { model in
             !poolModels.contains(where: { $0.label == model.label }) &&
             !claudeAppModels.contains(where: { $0.label == model.label }) &&
+            !grokBotModels.contains(where: { $0.label == model.label }) &&
             !codexModels.contains(where: { $0.label == model.label })
         }
         
@@ -802,6 +872,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         addSection(header: "─── QUOTA POOLS (SUMMARY) ───────", models: poolModels)
         addSection(header: "─── CLAUDE APP (OFFICIAL SUB) ───", models: claudeAppModels)
+        addSection(header: "─── GROK BOT (XAI) ──────────────", models: grokBotModels)
         addSection(header: "─── GEMINI 3.8 FLASH ────────────", models: geminiModels)
         addSection(header: "─── GEMINI 4 ARGON ──────────────", models: argonModels)
         addSection(header: "─── CLAUDE & GPT (ANTIGRAVITY) ──", models: claudeModels)
