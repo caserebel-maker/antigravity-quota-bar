@@ -623,6 +623,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return false
                 }
             }
+            
+            // Argon & Hydrogen: remove Low tier
+            if (lbl.contains("Argon") || lbl.contains("Hydrogen")) && (lbl.contains("Low") || lbl.contains("(Lo")) {
+                return false
+            }
             return true
         }
         

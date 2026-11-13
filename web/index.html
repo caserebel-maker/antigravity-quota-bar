@@ -683,6 +683,11 @@
           if (!lbl.includes('(High)') && !lbl.includes('(Hi')) return false;
         }
 
+        // Hydrogen: remove Low
+        if (lbl.includes('Hydrogen') && (lbl.includes('Low') || lbl.includes('(Lo'))) {
+          return false;
+        }
+
         return true;
       });
 
