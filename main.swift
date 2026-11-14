@@ -148,7 +148,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .replacingOccurrences(of: "Claude Opus 4.6 (High)", with: "Opus 4.6 (High)")
             .replacingOccurrences(of: "Gemini 3.8 Flash (High)", with: "Gemini 3.8 Flash")
             .replacingOccurrences(of: "Gemini 4 Argon (High)", with: "Gemini 4 Argon")
+            .replacingOccurrences(of: "Gemini 4 Argon (Medium)", with: "Gemini 4 Argon")
             .replacingOccurrences(of: "Gemini 4 Argon (Med)", with: "Gemini 4 Argon")
+            .replacingOccurrences(of: "Gemini 4 Hydrogen (High)", with: "Gemini 4 Hydrogen")
+            .replacingOccurrences(of: "Gemini 4 Hydrogen (Medium)", with: "Hydrogen (Med)")
+            .replacingOccurrences(of: "Gemini 4 Hydrogen (Med)", with: "Hydrogen (Med)")
+            .replacingOccurrences(of: "Gemini 4 Hydrogen (XHigh)", with: "Hydrogen (XHi)")
+            .replacingOccurrences(of: "Orchestrator (Argon)", with: "Orchestrator (Argon)")
             .replacingOccurrences(of: "Gemini Weekly", with: "Gemini Weekly")
             .replacingOccurrences(of: "Grok Bot (Weekly)", with: "Grok Bot Wk")
             .replacingOccurrences(of: "Codex Weekly", with: "Codex Weekly")
@@ -468,7 +474,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let u = latest["u"] as? [String: Any] ?? [:]
         
         let fhUsed = (u["fh"] as? NSNumber)?.doubleValue ?? 0.0
-        let fiveHourRemaining = max(0.0, 1.0 - fhUsed)
+        let fhNormalized = fhUsed > 1.0 ? (fhUsed / 100.0) : fhUsed
+        let fiveHourRemaining = max(0.0, 1.0 - fhNormalized)
         var fiveHourResetMs = 0.0
         if fhUsed > 0 && sampleTimeMs > 0 {
             let expireMs = sampleTimeMs + (5.0 * 3600.0 * 1000.0)
@@ -476,7 +483,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         let sdUsed = (u["sd"] as? NSNumber)?.doubleValue ?? 0.0
-        let weeklyRemaining = max(0.0, 1.0 - sdUsed)
+        let sdNormalized = sdUsed > 1.0 ? (sdUsed / 100.0) : sdUsed
+        let weeklyRemaining = max(0.0, 1.0 - sdNormalized)
         var weeklyResetMs = 0.0
         if sdUsed > 0 && sampleTimeMs > 0 {
             let expireMs = sampleTimeMs + (7.0 * 24.0 * 3600.0 * 1000.0)
@@ -841,6 +849,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let gArgon = filteredModels.first(where: { $0.label.contains("Argon") && ($0.label.contains("High") || $0.label.contains("Med")) }) {
             if !geminiSectionModels.contains(where: { $0.label == gArgon.label }) { geminiSectionModels.append(gArgon) }
         }
+        if let gHydro = filteredModels.first(where: { $0.label.contains("Hydrogen") && $0.label.contains("High") }) ?? filteredModels.first(where: { $0.label.contains("Hydrogen") }) {
+            if !geminiSectionModels.contains(where: { $0.label == gHydro.label }) { geminiSectionModels.append(gHydro) }
+        }
+        if let orch = filteredModels.first(where: { $0.label.contains("Orchestrator") }) {
+            if !geminiSectionModels.contains(where: { $0.label == orch.label }) { geminiSectionModels.append(orch) }
+        }
         
         // 2. 🟠 CLAUDE (ANTHROPIC) - Faint Orange
         var claudeSectionModels: [ModelQuota] = []
@@ -868,7 +882,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let filled = String(repeating: "█", count: max(0, filledLen))
             let empty = String(repeating: "░", count: max(0, emptyLen))
             
-            let shortLabel = cleanModelLabel(model.label).padding(toLength: 18, withPad: " ", startingAt: 0)
+            let shortLabel = cleanModelLabel(model.label).padding(toLength: 20, withPad: " ", startingAt: 0)
             
             var resetStr = ""
             if pctVal < 100, let resetMs = model.timeUntilResetMs, resetMs > 0 {

@@ -5,6 +5,7 @@ const path = require('path');
 
 const HOME = process.env.HOME || '';
 const CACHE_FILE = path.join(HOME, 'Library/Application Support/AntigravityQuotaBar/claude-app-usage.json');
+const CLAUDE_APP_HISTORY = path.join(HOME, 'Library/Application Support/Claude/plan-usage-history.json');
 const ORG_ID = 'c1aad3f0-f1a4-419b-ac9b-3c18f4eb9bf3';
 
 function tryBrowserFetch() {
@@ -54,6 +55,58 @@ end tell`;
   return null;
 }
 
+function tryClaudeAppHistory() {
+  if (!fs.existsSync(CLAUDE_APP_HISTORY)) return null;
+  try {
+    const raw = fs.readFileSync(CLAUDE_APP_HISTORY, 'utf8');
+    const data = JSON.parse(raw);
+    if (!data.samples || data.samples.length === 0) return null;
+
+    const latest = data.samples.reduce((prev, curr) => (curr.t > prev.t ? curr : prev), data.samples[0]);
+    if (!latest || !latest.u) return null;
+
+    const fh = typeof latest.u.fh === 'number' ? latest.u.fh : 0;
+    const sd = typeof latest.u.sd === 'number' ? latest.u.sd : 0;
+    const sampleTime = latest.t || Date.now();
+
+    // 5-hour session reset calculation: 5h after limit start
+    const fiveHourReset = new Date(Math.max(Date.now(), sampleTime + 5 * 3600 * 1000)).toISOString();
+
+    // Weekly reset: next Sunday at 21:00 UTC
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay();
+    const daysUntilSunday = (7 - dayOfWeek) % 7;
+    const nextSunday = new Date(now);
+    nextSunday.setUTCDate(now.getUTCDate() + daysUntilSunday);
+    nextSunday.setUTCHours(21, 0, 0, 0);
+    if (nextSunday.getTime() <= now.getTime()) {
+      nextSunday.setUTCDate(nextSunday.getUTCDate() + 7);
+    }
+    const weeklyReset = nextSunday.toISOString();
+
+    return JSON.stringify({
+      limits: [
+        {
+          kind: "session",
+          group: "session",
+          percent: fh,
+          resets_at: fiveHourReset,
+          is_active: fh >= 100
+        },
+        {
+          kind: "weekly_all",
+          group: "weekly",
+          percent: sd,
+          resets_at: weeklyReset,
+          is_active: true
+        }
+      ]
+    });
+  } catch (_) {
+    return null;
+  }
+}
+
 function tryCachedFile() {
   if (fs.existsSync(CACHE_FILE)) {
     try {
@@ -70,6 +123,12 @@ function main() {
   const liveData = tryBrowserFetch();
   if (liveData) {
     console.log(liveData);
+    process.exit(0);
+  }
+
+  const appHistory = tryClaudeAppHistory();
+  if (appHistory) {
+    console.log(appHistory);
     process.exit(0);
   }
 
