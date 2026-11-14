@@ -39,6 +39,39 @@ struct GrokBotRateLimitInfo {
     let planLabel: String
 }
 
+class QuotaRowView: NSView {
+    let attrText: NSAttributedString
+    let bgColor: NSColor
+    let borderColor: NSColor?
+    let isHeader: Bool
+    
+    init(attrText: NSAttributedString, bgColor: NSColor, borderColor: NSColor? = nil, isHeader: Bool = false, width: CGFloat = 430, height: CGFloat = 20) {
+        self.attrText = attrText
+        self.bgColor = bgColor
+        self.borderColor = borderColor
+        self.isHeader = isHeader
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: isHeader ? 23 : 20))
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let rect = bounds.insetBy(dx: isHeader ? 4 : 7, dy: 1)
+        let path = NSBezierPath(roundedRect: rect, xRadius: isHeader ? 5 : 4, yRadius: isHeader ? 5 : 4)
+        bgColor.setFill()
+        path.fill()
+        
+        if let border = borderColor {
+            border.setStroke()
+            path.lineWidth = 1
+            path.stroke()
+        }
+        
+        attrText.draw(at: NSPoint(x: isHeader ? 12 : 14, y: isHeader ? 3.5 : 2))
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarItem: NSStatusItem!
     var menu: NSMenu!
@@ -105,17 +138,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func cleanModelLabel(_ label: String) -> String {
-        if label.starts(with: "Claude App") || label.starts(with: "Grok Bot") {
-            return label
-        }
         return label
-            .replacingOccurrences(of: "Claude ", with: "")
-            .replacingOccurrences(of: " 4.6 (Thinking)", with: " 4.6 (Think)")
-            .replacingOccurrences(of: " Flash ", with: " ")
-            .replacingOccurrences(of: " 3.1 Pro ", with: " 3.1 ")
-            .replacingOccurrences(of: " 120B (Medium)", with: " (Med)")
-            .replacingOccurrences(of: " (Medium)", with: " (Med)")
-            .replacingOccurrences(of: " (Thinking)", with: " (Think)")
+            .replacingOccurrences(of: "Claude App (5h)", with: "Claude App 5h")
+            .replacingOccurrences(of: "Claude App (Weekly)", with: "Claude App Wk")
+            .replacingOccurrences(of: "Claude/GPT Weekly", with: "Claude/GPT Wk")
+            .replacingOccurrences(of: "Claude Sonnet 5.5 (High)", with: "Sonnet 5.5 (High)")
+            .replacingOccurrences(of: "Claude Opus 5.5 (High)", with: "Opus 5.5 (High)")
+            .replacingOccurrences(of: "Claude Sonnet 4.6 (High)", with: "Sonnet 4.6 (High)")
+            .replacingOccurrences(of: "Claude Opus 4.6 (High)", with: "Opus 4.6 (High)")
+            .replacingOccurrences(of: "Gemini 3.8 Flash (High)", with: "Gemini 3.8 Flash")
+            .replacingOccurrences(of: "Gemini 4 Argon (High)", with: "Gemini 4 Argon")
+            .replacingOccurrences(of: "Gemini 4 Argon (Med)", with: "Gemini 4 Argon")
+            .replacingOccurrences(of: "Gemini Weekly", with: "Gemini Weekly")
+            .replacingOccurrences(of: "Grok Bot (Weekly)", with: "Grok Bot Wk")
+            .replacingOccurrences(of: "Codex Weekly", with: "Codex Weekly")
+            .replacingOccurrences(of: " (Thinking)", with: "")
+            .replacingOccurrences(of: " (Think)", with: "")
+    }
+    
+    func formatShortResetTime(_ ms: Double) -> String {
+        guard ms > 0 else { return "" }
+        let minutes = Int(ms / 60000)
+        let hours = minutes / 60
+        let mins = minutes % 60
+        
+        if hours >= 24 {
+            let days = hours / 24
+            let remHours = hours % 24
+            return " (⏱ \(days)d \(remHours)h)"
+        } else if hours > 0 {
+            return " (⏱ \(hours)h \(mins)m)"
+        } else {
+            return " (⏱ \(mins)m)"
+        }
+    }
+    
+    @objc func openWebDashboard() {
+        if let url = URL(string: "https://forevier.com/quota/") {
+            NSWorkspace.shared.open(url)
+        }
     }
     
     func formatResetTime(_ ms: Double) -> String {
@@ -763,123 +824,141 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         
-        let emailItem = createMenuItem(text: "Email:  \(output.email)", color: .secondaryLabelColor)
-        emailItem.isEnabled = false
-        menu.addItem(emailItem)
-        
-        let methodItem = createMenuItem(text: "Method: \(output.method)", color: .secondaryLabelColor)
-        methodItem.isEnabled = false
-        menu.addItem(methodItem)
-        
         let dateFormatter = DateFormatter()
         dateFormatter.timeStyle = .medium
-        let syncItem = createMenuItem(text: "Sync:   \(dateFormatter.string(from: Date()))", color: .secondaryLabelColor)
-        syncItem.isEnabled = false
-        menu.addItem(syncItem)
+        let infoItem = createMenuItem(text: "\(output.email) · Sync: \(dateFormatter.string(from: Date()))", color: .secondaryLabelColor)
+        infoItem.isEnabled = false
+        menu.addItem(infoItem)
         
         menu.addItem(NSMenuItem.separator())
         
-        // Sorting and grouping helpers
-        func tierSortWeight(_ label: String) -> Int {
-            if label.contains("(High)") || label.contains("(Hi") { return 1 }
-            if label.contains("(Med") { return 2 }
-            if label.contains("(Low)") || label.contains("(Lo") { return 3 }
-            return 4
+        // 1. 🔵 GEMINI (GOOGLE) - Faint Blue
+        var geminiSectionModels: [ModelQuota] = []
+        if let g5h = filteredModels.first(where: { $0.label == "Gemini 5h" }) { geminiSectionModels.append(g5h) }
+        if let gw = filteredModels.first(where: { $0.label == "Gemini Weekly" }) { geminiSectionModels.append(gw) }
+        if let argWk = filteredModels.first(where: { $0.label == "Argon Weekly" }) { geminiSectionModels.append(argWk) }
+        if let gFlash = filteredModels.first(where: { $0.label.contains("Gemini 3.8") && $0.label.contains("High") }) { geminiSectionModels.append(gFlash) }
+        if let gArgon = filteredModels.first(where: { $0.label.contains("Argon") && ($0.label.contains("High") || $0.label.contains("Med")) }) {
+            if !geminiSectionModels.contains(where: { $0.label == gArgon.label }) { geminiSectionModels.append(gArgon) }
         }
         
-        func poolSortWeight(_ label: String) -> Int {
-            switch label {
-            case "Gemini 5h": return 1
-            case "Gemini Weekly": return 2
-            case "Claude/GPT 5h": return 3
-            case "Claude/GPT Weekly": return 4
-            case "Argon Weekly": return 5
-            default: return 99
-            }
-        }
-        
-        let poolModels = filteredModels.filter { 
-            $0.label == "Gemini Weekly" || $0.label == "Gemini 5h" ||
-            $0.label == "Claude/GPT Weekly" || $0.label == "Claude/GPT 5h" ||
-            $0.label == "Argon Weekly"
-        }.sorted { poolSortWeight($0.label) < poolSortWeight($1.label) }
-        
-        let claudeAppModels = filteredModels.filter { $0.label.starts(with: "Claude App") }
-            .sorted { ($0.label.contains("5h") ? 1 : ($0.label.contains("Weekly") ? 2 : 3)) < ($1.label.contains("5h") ? 1 : ($1.label.contains("Weekly") ? 2 : 3)) }
-        
-        let grokBotModels = filteredModels.filter { $0.label.starts(with: "Grok Bot") }
-
-        let codexModels = filteredModels.filter { $0.label.starts(with: "Codex") }
+        // 2. 🟠 CLAUDE (ANTHROPIC) - Faint Orange
+        var claudeSectionModels: [ModelQuota] = []
+        let cApp = filteredModels.filter { $0.label.starts(with: "Claude App") }
             .sorted { ($0.label.contains("5h") ? 1 : 2) < ($1.label.contains("5h") ? 1 : 2) }
-        
-        let individualModels = filteredModels.filter { model in
-            !poolModels.contains(where: { $0.label == model.label }) &&
-            !claudeAppModels.contains(where: { $0.label == model.label }) &&
-            !grokBotModels.contains(where: { $0.label == model.label }) &&
-            !codexModels.contains(where: { $0.label == model.label })
-        }
-        
-        let geminiModels = individualModels.filter { model in
-            let l = model.label
-            return (l.contains("Gemini 3.8") || l.contains("Gemini 3.7") || l.contains("Gemini 3.5") || l.contains("Gemini Flash")) && !l.contains("Argon")
-        }.sorted { tierSortWeight($0.label) < tierSortWeight($1.label) }
-        
-        let argonModels = individualModels.filter { model in
-            model.label.contains("Argon")
-        }.sorted { tierSortWeight($0.label) < tierSortWeight($1.label) }
-        
-        func claudeSortWeight(_ label: String) -> Int {
-            let family = label.contains("Sonnet") ? 10 : (label.contains("Opus") ? 20 : 30)
-            return family + tierSortWeight(label)
-        }
-        
-        let claudeModels = individualModels.filter { model in
-            let l = model.label
-            return l.contains("Sonnet") || l.contains("Opus") || l.contains("Claude") || l.contains("GPT")
-        }.sorted { claudeSortWeight($0.label) < claudeSortWeight($1.label) }
-        
-        let handledIndividual = Set((geminiModels + argonModels + claudeModels).map { $0.label })
-        let otherModels = individualModels.filter { !handledIndividual.contains($0.label) }
-        
-        func appendModelRow(_ model: ModelQuota) {
+        claudeSectionModels.append(contentsOf: cApp)
+        if let c5h = filteredModels.first(where: { $0.label == "Claude/GPT 5h" }) { claudeSectionModels.append(c5h) }
+        if let cw = filteredModels.first(where: { $0.label == "Claude/GPT Weekly" }) { claudeSectionModels.append(cw) }
+        if let sonnet = filteredModels.first(where: { $0.label.contains("Sonnet") && $0.label.contains("High") }) { claudeSectionModels.append(sonnet) }
+        if let opus = filteredModels.first(where: { $0.label.contains("Opus") && $0.label.contains("High") }) { claudeSectionModels.append(opus) }
+
+        // 3. ⚡ GROK (XAI) - Faint Black
+        let grokSectionModels = filteredModels.filter { $0.label.starts(with: "Grok Bot") }
+
+        // 4. ⚪ OPENAI / CODEX - Faint White
+        let codexSectionModels = filteredModels.filter { $0.label.starts(with: "Codex") }
+            .sorted { ($0.label.contains("5h") ? 1 : 2) < ($1.label.contains("5h") ? 1 : 2) }
+            
+        func appendModelRow(_ model: ModelQuota, rowBg: NSColor, rowBorder: NSColor?) {
             let remainingPct = model.remainingPercentage ?? 1.0
             let pctVal = Int(round(remainingPct * 100))
-            let bar = makeUnicodeBar(pct: remainingPct, width: 12)
-            let shortLabel = cleanModelLabel(model.label).padding(toLength: 22, withPad: " ", startingAt: 0)
+            let bar = makeUnicodeBar(pct: remainingPct, width: 10)
+            let shortLabel = cleanModelLabel(model.label).padding(toLength: 18, withPad: " ", startingAt: 0)
             
             var resetStr = ""
-            if let resetMs = model.timeUntilResetMs, resetMs > 0 {
-                resetStr = formatResetTime(resetMs)
+            if pctVal < 100, let resetMs = model.timeUntilResetMs, resetMs > 0 {
+                resetStr = formatShortResetTime(resetMs)
             }
             
+            let font = NSFont(name: "Monaco", size: 12) ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
             let rowText = "\(shortLabel) [\(bar)] \(String(format: "%3d%%", pctVal))\(resetStr)"
             let color = colorForPercentage(remainingPct)
-            let modelItem = createMenuItem(text: rowText, color: color)
-            modelItem.isEnabled = false
+            
+            let attrStr = NSAttributedString(string: rowText, attributes: [
+                .font: font,
+                .foregroundColor: color
+            ])
+            
+            let modelItem = NSMenuItem()
+            modelItem.view = QuotaRowView(attrText: attrStr, bgColor: rowBg, borderColor: rowBorder, isHeader: false)
             menu.addItem(modelItem)
         }
         
-        func addSection(header: String, models: [ModelQuota]) {
+        func addSection(
+            header: String,
+            models: [ModelQuota],
+            headerColor: NSColor,
+            headerBg: NSColor,
+            headerBorder: NSColor,
+            rowBg: NSColor,
+            rowBorder: NSColor
+        ) {
             guard !models.isEmpty else { return }
-            let headerItem = createMenuItem(text: header, color: .secondaryLabelColor, isBold: true)
-            headerItem.isEnabled = false
+            
+            let font = NSFont(name: "Monaco-Bold", size: 12) ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .bold)
+            let headerAttr = NSAttributedString(string: header, attributes: [
+                .font: font,
+                .foregroundColor: headerColor
+            ])
+            
+            let headerItem = NSMenuItem()
+            headerItem.view = QuotaRowView(attrText: headerAttr, bgColor: headerBg, borderColor: headerBorder, isHeader: true)
             menu.addItem(headerItem)
+            
             for model in models {
-                appendModelRow(model)
+                appendModelRow(model, rowBg: rowBg, rowBorder: rowBorder)
             }
+            
             menu.addItem(NSMenuItem.separator())
         }
         
-        addSection(header: "─── QUOTA POOLS (SUMMARY) ───────", models: poolModels)
-        addSection(header: "─── CLAUDE APP (OFFICIAL SUB) ───", models: claudeAppModels)
-        addSection(header: "─── GROK BOT (XAI) ──────────────", models: grokBotModels)
-        addSection(header: "─── GEMINI 3.8 FLASH ────────────", models: geminiModels)
-        addSection(header: "─── GEMINI 4 ARGON ──────────────", models: argonModels)
-        addSection(header: "─── CLAUDE & GPT (ANTIGRAVITY) ──", models: claudeModels)
-        if !otherModels.isEmpty {
-            addSection(header: "─── OTHER MODELS ────────────────", models: otherModels)
-        }
-        addSection(header: "─── CODEX LIMITS (OPENAI) ───────", models: codexModels)
+        // 1. 🔵 GEMINI (GOOGLE) - สีฟ้า
+        addSection(
+            header: "─── 🔵 GEMINI (GOOGLE) ────────────────────",
+            models: geminiSectionModels,
+            headerColor: NSColor(red: 0.35, green: 0.70, blue: 1.0, alpha: 1.0),
+            headerBg: NSColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 0.22),
+            headerBorder: NSColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 0.45),
+            rowBg: NSColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 0.10),
+            rowBorder: NSColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 0.20)
+        )
+        
+        // 2. 🟠 CLAUDE (ANTHROPIC) - สีส้ม
+        addSection(
+            header: "─── 🟠 CLAUDE (ANTHROPIC) ─────────────────",
+            models: claudeSectionModels,
+            headerColor: NSColor(red: 1.0, green: 0.65, blue: 0.25, alpha: 1.0),
+            headerBg: NSColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 0.22),
+            headerBorder: NSColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 0.45),
+            rowBg: NSColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 0.10),
+            rowBorder: NSColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 0.20)
+        )
+        
+        // 3. ⚡ GROK (XAI) - สีดำ
+        addSection(
+            header: "─── ⚡ GROK (XAI) ─────────────────────────",
+            models: grokSectionModels,
+            headerColor: NSColor(red: 0.98, green: 0.45, blue: 0.55, alpha: 1.0),
+            headerBg: NSColor(white: 0.08, alpha: 0.60),
+            headerBorder: NSColor(white: 1.0, alpha: 0.25),
+            rowBg: NSColor(white: 0.08, alpha: 0.38),
+            rowBorder: NSColor(white: 1.0, alpha: 0.14)
+        )
+        
+        // 4. ⚪ OPENAI / CODEX - สีขาว
+        addSection(
+            header: "─── ⚪ OPENAI / CODEX ─────────────────────",
+            models: codexSectionModels,
+            headerColor: NSColor(white: 0.95, alpha: 1.0),
+            headerBg: NSColor(white: 1.0, alpha: 0.18),
+            headerBorder: NSColor(white: 1.0, alpha: 0.40),
+            rowBg: NSColor(white: 1.0, alpha: 0.09),
+            rowBorder: NSColor(white: 1.0, alpha: 0.18)
+        )
+        
+        let webItem = NSMenuItem(title: "🌐 Open Web Dashboard", action: #selector(openWebDashboard), keyEquivalent: "w")
+        webItem.target = self
+        menu.addItem(webItem)
         
         let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchItem.target = self
