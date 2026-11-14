@@ -659,6 +659,8 @@
       if (label === 'Argon Weekly') return 'Argon Wk';
       if (label.includes('3.8')) return 'Gemini 3.8';
       if (label.includes('Argon')) return 'Argon 4';
+      if (label.includes('Hydrogen')) return 'Hydrogen';
+      if (label.includes('Orchestrator')) return 'Orchestrator';
       if (label.includes('Opus')) return 'Opus 5.5';
       if (label.includes('Sonnet')) return 'Sonnet 5.5';
       if (label.includes('Codex 5h')) return 'Codex 5h';
@@ -720,6 +722,8 @@
       const agyModels = models.filter(m => 
         m.label.includes('3.8') || 
         (m.label.includes('Argon') && !m.label.includes('Weekly')) ||
+        (m.label.includes('Hydrogen') && m.label.includes('High')) ||
+        m.label.includes('Orchestrator') ||
         ((m.label.includes('Sonnet') || m.label.includes('Opus')) && !m.label.includes('Weekly') && !m.label.includes('5h') && !m.label.startsWith('Claude App'))
       );
 
