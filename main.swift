@@ -859,10 +859,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let codexSectionModels = filteredModels.filter { $0.label.starts(with: "Codex") }
             .sorted { ($0.label.contains("5h") ? 1 : 2) < ($1.label.contains("5h") ? 1 : 2) }
             
-        func appendModelRow(_ model: ModelQuota, rowBg: NSColor, rowBorder: NSColor?) {
+        func appendModelRow(_ model: ModelQuota, rowBg: NSColor, rowBorder: NSColor?, barColor: NSColor) {
             let remainingPct = model.remainingPercentage ?? 1.0
             let pctVal = Int(round(remainingPct * 100))
-            let bar = makeUnicodeBar(pct: remainingPct, width: 10)
+            let width = 10
+            let filledLen = Int(round(remainingPct * Double(width)))
+            let emptyLen = width - filledLen
+            let filled = String(repeating: "█", count: max(0, filledLen))
+            let empty = String(repeating: "░", count: max(0, emptyLen))
+            
             let shortLabel = cleanModelLabel(model.label).padding(toLength: 18, withPad: " ", startingAt: 0)
             
             var resetStr = ""
@@ -871,13 +876,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             
             let font = NSFont(name: "Monaco", size: 12) ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-            let rowText = "\(shortLabel) [\(bar)] \(String(format: "%3d%%", pctVal))\(resetStr)"
-            let color = colorForPercentage(remainingPct)
             
-            let attrStr = NSAttributedString(string: rowText, attributes: [
+            let attrStr = NSMutableAttributedString()
+            attrStr.append(NSAttributedString(string: "\(shortLabel) [", attributes: [
                 .font: font,
-                .foregroundColor: color
-            ])
+                .foregroundColor: NSColor.white
+            ]))
+            attrStr.append(NSAttributedString(string: filled, attributes: [
+                .font: font,
+                .foregroundColor: barColor
+            ]))
+            attrStr.append(NSAttributedString(string: empty, attributes: [
+                .font: font,
+                .foregroundColor: NSColor.white.withAlphaComponent(0.22)
+            ]))
+            attrStr.append(NSAttributedString(string: "] \(String(format: "%3d%%", pctVal))", attributes: [
+                .font: font,
+                .foregroundColor: barColor
+            ]))
+            if !resetStr.isEmpty {
+                attrStr.append(NSAttributedString(string: resetStr, attributes: [
+                    .font: font,
+                    .foregroundColor: NSColor.secondaryLabelColor
+                ]))
+            }
             
             let modelItem = NSMenuItem()
             modelItem.view = QuotaRowView(attrText: attrStr, bgColor: rowBg, borderColor: rowBorder, isHeader: false)
@@ -891,7 +913,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             headerBg: NSColor,
             headerBorder: NSColor,
             rowBg: NSColor,
-            rowBorder: NSColor
+            rowBorder: NSColor,
+            barColor: NSColor
         ) {
             guard !models.isEmpty else { return }
             
@@ -906,7 +929,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(headerItem)
             
             for model in models {
-                appendModelRow(model, rowBg: rowBg, rowBorder: rowBorder)
+                appendModelRow(model, rowBg: rowBg, rowBorder: rowBorder, barColor: barColor)
             }
             
             menu.addItem(NSMenuItem.separator())
@@ -916,11 +939,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         addSection(
             header: "─── 🔵 GEMINI (GOOGLE) ────────────────────",
             models: geminiSectionModels,
-            headerColor: NSColor(red: 0.35, green: 0.70, blue: 1.0, alpha: 1.0),
+            headerColor: NSColor(red: 0.35, green: 0.75, blue: 1.0, alpha: 1.0),
             headerBg: NSColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 0.22),
             headerBorder: NSColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 0.45),
             rowBg: NSColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 0.10),
-            rowBorder: NSColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 0.20)
+            rowBorder: NSColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 0.20),
+            barColor: NSColor(red: 0.35, green: 0.75, blue: 1.0, alpha: 1.0)
         )
         
         // 2. 🟠 CLAUDE (ANTHROPIC) - สีส้ม
@@ -931,7 +955,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             headerBg: NSColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 0.22),
             headerBorder: NSColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 0.45),
             rowBg: NSColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 0.10),
-            rowBorder: NSColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 0.20)
+            rowBorder: NSColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 0.20),
+            barColor: NSColor(red: 1.0, green: 0.60, blue: 0.20, alpha: 1.0)
         )
         
         // 3. ⚡ GROK (XAI) - สีดำ
@@ -942,7 +967,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             headerBg: NSColor(white: 0.08, alpha: 0.60),
             headerBorder: NSColor(white: 1.0, alpha: 0.25),
             rowBg: NSColor(white: 0.08, alpha: 0.38),
-            rowBorder: NSColor(white: 1.0, alpha: 0.14)
+            rowBorder: NSColor(white: 1.0, alpha: 0.14),
+            barColor: NSColor(red: 0.98, green: 0.45, blue: 0.55, alpha: 1.0)
         )
         
         // 4. ⚪ OPENAI / CODEX - สีขาว
@@ -953,7 +979,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             headerBg: NSColor(white: 1.0, alpha: 0.18),
             headerBorder: NSColor(white: 1.0, alpha: 0.40),
             rowBg: NSColor(white: 1.0, alpha: 0.09),
-            rowBorder: NSColor(white: 1.0, alpha: 0.18)
+            rowBorder: NSColor(white: 1.0, alpha: 0.18),
+            barColor: NSColor.white
         )
         
         let webItem = NSMenuItem(title: "🌐 Open Web Dashboard", action: #selector(openWebDashboard), keyEquivalent: "w")
