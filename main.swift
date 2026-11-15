@@ -397,9 +397,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    func fetchClaudeUsageDirect(sessionKey: String, orgId: String = "c1aad3f0-f1a4-419b-ac9b-3c18f4eb9bf3") -> String? {
+        guard let url = URL(string: "https://claude.ai/api/organizations/\(orgId)/usage") else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)", forHTTPHeaderField: "User-Agent")
+        req.timeoutInterval = 8
+        
+        let sema = DispatchSemaphore(value: 0)
+        var result: String? = nil
+        let task = URLSession.shared.dataTask(with: req) { data, resp, _ in
+            if let http = resp as? HTTPURLResponse, http.statusCode == 200,
+               let data = data, let str = String(data: data, encoding: .utf8),
+               str.contains("limits") {
+                result = str
+            }
+            sema.signal()
+        }
+        task.resume()
+        _ = sema.wait(timeout: .now() + 8.0)
+        return result
+    }
+    
     func getClaudeAppQuota() -> ClaudeAppRateLimitInfo? {
-        if let rawOutput = runFetchClaudeQuota(),
-           let data = rawOutput.data(using: .utf8),
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let keyPaths = [
+            "\(homeDir)/Library/Application Support/AntigravityQuotaBar/claude-session-key.txt",
+            "\(homeDir)/.claude-session-key"
+        ]
+        var sessionKey: String? = nil
+        for p in keyPaths {
+            if let content = try? String(contentsOfFile: p, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), content.count > 10 {
+                sessionKey = content
+                break
+            }
+        }
+        
+        var rawOutput: String? = nil
+        if let key = sessionKey {
+            rawOutput = fetchClaudeUsageDirect(sessionKey: key)
+        }
+        if rawOutput == nil {
+            rawOutput = runFetchClaudeQuota()
+        }
+        
+        if let output = rawOutput,
+           let data = output.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let limits = json["limits"] as? [[String: Any]],
            !limits.isEmpty {
@@ -449,8 +493,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let fileManager = FileManager.default
-        let homeDir = fileManager.homeDirectoryForCurrentUser
-        let historyFile = homeDir.appendingPathComponent("Library/Application Support/Claude/plan-usage-history.json")
+        let homeDirUrl = fileManager.homeDirectoryForCurrentUser
+        let historyFile = homeDirUrl.appendingPathComponent("Library/Application Support/Claude/plan-usage-history.json")
         
         guard fileManager.fileExists(atPath: historyFile.path),
               let data = try? Data(contentsOf: historyFile),
