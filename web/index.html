@@ -657,10 +657,13 @@
       if (label === 'Claude/GPT 5h') return 'Claude/GPT 5h';
       if (label === 'Claude/GPT Weekly') return 'Claude/GPT Wk';
       if (label === 'Argon Weekly') return 'Argon Wk';
+      if (label === 'Orchestrator (Neon)') return 'Orch (Neon)';
+      if (label === 'Orchestrator (Argon)') return 'Orch (Argon)';
+      if (label.includes('Orchestrator')) return 'Orchestrator';
       if (label.includes('3.8')) return 'Gemini 3.8';
+      if (label.includes('Neon')) return 'Neon 4';
       if (label.includes('Argon')) return 'Argon 4';
       if (label.includes('Hydrogen')) return 'Hydrogen';
-      if (label.includes('Orchestrator')) return 'Orchestrator';
       if (label.includes('Opus')) return 'Opus 5.5';
       if (label.includes('Sonnet')) return 'Sonnet 5.5';
       if (label.includes('Codex 5h')) return 'Codex 5h';
@@ -678,6 +681,7 @@
         const lbl = m.label;
         if (lbl.includes('3.1') || lbl.includes('3.6')) return false;
         if (lbl.includes('GPT-OSS') || lbl.toLowerCase().includes('gptoss')) return false;
+        if (lbl.includes('Carbon')) return false;
         if (lbl.includes('3.7') && lbl.includes('Low')) return false;
         
         // Claude Sonnet & Opus: keep High
@@ -697,8 +701,8 @@
           if (!lbl.includes('(High)') && !lbl.includes('(Hi')) return false;
         }
 
-        // Hydrogen: remove Low
-        if (lbl.includes('Hydrogen') && (lbl.includes('Low') || lbl.includes('(Lo'))) {
+        // Hydrogen & Neon: remove Low
+        if ((lbl.includes('Hydrogen') || lbl.includes('Neon')) && (lbl.includes('Low') || lbl.includes('(Lo'))) {
           return false;
         }
 
@@ -721,8 +725,9 @@
 
       const agyModels = models.filter(m => 
         m.label.includes('3.8') || 
-        (m.label.includes('Argon') && !m.label.includes('Weekly')) ||
+        (m.label.includes('Argon') && !m.label.includes('Weekly') && !m.label.includes('Orchestrator')) ||
         (m.label.includes('Hydrogen') && m.label.includes('High')) ||
+        (m.label.includes('Gemini 4 Neon') && m.label.includes('High')) ||
         m.label.includes('Orchestrator') ||
         ((m.label.includes('Sonnet') || m.label.includes('Opus')) && !m.label.includes('Weekly') && !m.label.includes('5h') && !m.label.startsWith('Claude App'))
       );

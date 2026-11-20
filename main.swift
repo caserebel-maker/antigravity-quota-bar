@@ -150,10 +150,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .replacingOccurrences(of: "Gemini 4 Argon (High)", with: "Gemini 4 Argon")
             .replacingOccurrences(of: "Gemini 4 Argon (Medium)", with: "Gemini 4 Argon")
             .replacingOccurrences(of: "Gemini 4 Argon (Med)", with: "Gemini 4 Argon")
+            .replacingOccurrences(of: "Gemini 4 Neon (High)", with: "Gemini 4 Neon")
+            .replacingOccurrences(of: "Gemini 4 Neon (Medium)", with: "Neon (Med)")
+            .replacingOccurrences(of: "Gemini 4 Neon (Med)", with: "Neon (Med)")
+            .replacingOccurrences(of: "Gemini 4 Neon (XHigh)", with: "Neon (XHi)")
             .replacingOccurrences(of: "Gemini 4 Hydrogen (High)", with: "Gemini 4 Hydrogen")
             .replacingOccurrences(of: "Gemini 4 Hydrogen (Medium)", with: "Hydrogen (Med)")
             .replacingOccurrences(of: "Gemini 4 Hydrogen (Med)", with: "Hydrogen (Med)")
             .replacingOccurrences(of: "Gemini 4 Hydrogen (XHigh)", with: "Hydrogen (XHi)")
+            .replacingOccurrences(of: "Orchestrator (Neon)", with: "Orchestrator (Neon)")
             .replacingOccurrences(of: "Orchestrator (Argon)", with: "Orchestrator (Argon)")
             .replacingOccurrences(of: "Gemini Weekly", with: "Gemini Weekly")
             .replacingOccurrences(of: "Grok Bot (Weekly)", with: "Grok Bot Wk")
@@ -786,6 +791,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let lbl = model.label
             if lbl.contains("3.1") || lbl.contains("3.6") { return false }
             if lbl.contains("GPT-OSS") || lbl.lowercased().contains("gptoss") { return false }
+            if lbl.contains("Carbon") { return false }
             if lbl.contains("3.7") && lbl.contains("Low") { return false }
             
             // Claude Sonnet & Opus: keep only High, remove Medium and Low
@@ -804,8 +810,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             
-            // Argon & Hydrogen: remove Low tier
-            if (lbl.contains("Argon") || lbl.contains("Hydrogen")) && (lbl.contains("Low") || lbl.contains("(Lo")) {
+            // Argon, Hydrogen & Neon: remove Low tier
+            if (lbl.contains("Argon") || lbl.contains("Hydrogen") || lbl.contains("Neon")) && (lbl.contains("Low") || lbl.contains("(Lo")) {
                 return false
             }
             return true
@@ -896,7 +902,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let gHydro = filteredModels.first(where: { $0.label.contains("Hydrogen") && $0.label.contains("High") }) ?? filteredModels.first(where: { $0.label.contains("Hydrogen") }) {
             if !geminiSectionModels.contains(where: { $0.label == gHydro.label }) { geminiSectionModels.append(gHydro) }
         }
-        if let orch = filteredModels.first(where: { $0.label.contains("Orchestrator") }) {
+        if let gNeon = filteredModels.first(where: { $0.label.contains("Gemini 4 Neon") && $0.label.contains("High") }) ?? filteredModels.first(where: { $0.label.contains("Gemini 4 Neon") }) {
+            if !geminiSectionModels.contains(where: { $0.label == gNeon.label }) { geminiSectionModels.append(gNeon) }
+        }
+        for orch in filteredModels where orch.label.contains("Orchestrator") {
             if !geminiSectionModels.contains(where: { $0.label == orch.label }) { geminiSectionModels.append(orch) }
         }
         
